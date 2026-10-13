@@ -145,11 +145,25 @@ sed -i "s#_('Firmware Version'), (L\.isObject(boardinfo\.release) ? boardinfo\.r
                 ? boardinfo.release.description + ' / '\n \
                 : '') + (luciversion || '') + ' / ',\n \
             E('a', {\n \
-                href: 'https://github.com/laipeng668/openwrt-ci-roc/releases',\n \
+                href: 'https://github.com/zk6685/zk-laipengwrt/releases',\n \
                 target: '_blank',\n \
                 rel: 'noopener noreferrer'\n \
-                }, [ 'Built by Roc $(date "+%Y-%m-%d %H:%M:%S")' ])\n \
+                }, [ 'Built by zk6685 $(date "+%Y-%m-%d %H:%M:%S")' ])\n \
             ]),#" "$luci_system_js"
+
+# 调整NN6000 v1/v2内核分区大小为12M（原为6144k/6M，改为12288k/12M）
+ipq60xx_mk="target/linux/qualcommax/image/ipq60xx.mk"
+if [ -f "$ipq60xx_mk" ]; then
+  sed -i '/^define Device\/link_nn6000-v1/,/^endef/ s/^\([[:space:]]*KERNEL_SIZE := \)[0-9]*k/\112288k/' "$ipq60xx_mk"
+  sed -i '/^define Device\/link_nn6000-v2/,/^endef/ s/^\([[:space:]]*KERNEL_SIZE := \)[0-9]*k/\112288k/' "$ipq60xx_mk"
+  if grep -q 'KERNEL_SIZE := 12288k' "$ipq60xx_mk"; then
+    echo "NN6000 kernel partition size adjusted to 12M"
+  else
+    echo "Warning: NN6000 KERNEL_SIZE was not adjusted to 12M in $ipq60xx_mk" >&2
+  fi
+else
+  echo "Warning: $ipq60xx_mk not found, skip kernel size adjustment" >&2
+fi
 
 # 调整NSS驱动q6_region内存区域预留大小（ipq6018.dtsi默认预留85MB，ipq6018-512m.dtsi默认预留55MB，带WiFi必须至少预留54MB，以下分别是改成预留16MB、32MB、64MB和96MB）
 # sed -i 's/reg = <0x0 0x4ab00000 0x0 0x[0-9a-f]\+>/reg = <0x0 0x4ab00000 0x0 0x01000000>/' target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6018-512m.dtsi
@@ -331,6 +345,83 @@ fi
 if package_enabled luci-app-openclash; then
   rm -rf feeds/luci/applications/luci-app-openclash
   clone_repository https://github.com/vernesong/OpenClash master package/luci-app-openclash
+fi
+
+# ---- zk6685 定制插件源（优先 laipeng668，其余为对应上游）----
+if package_enabled luci-app-mosdns mosdns geo2txt; then
+  rm -rf feeds/luci/applications/luci-app-mosdns feeds/packages/net/mosdns feeds/packages/net/geo2txt
+  clone_repository https://github.com/sbwml/luci-app-mosdns v5 package/mosdns
+  mv package/mosdns/luci-app-mosdns feeds/luci/applications/luci-app-mosdns
+  mv package/mosdns/mosdns feeds/packages/net/mosdns
+  mv package/mosdns/geo2txt feeds/packages/net/geo2txt
+  rm -rf package/mosdns
+fi
+
+if package_enabled luci-app-filebrowser filebrowser; then
+  rm -rf feeds/packages/net/filebrowser feeds/luci/applications/luci-app-filebrowser
+  git_sparse_clone master https://github.com/kenzok8/openwrt-packages filebrowser
+  mv package/filebrowser feeds/packages/net/filebrowser
+  git_sparse_clone master https://github.com/kenzok8/openwrt-packages luci-app-filebrowser
+  mv package/luci-app-filebrowser feeds/luci/applications/luci-app-filebrowser
+  # filebrowser 主包提供 config/init，删除 luci-app 自带 root/etc 避免 apk 安装冲突
+  rm -rf feeds/luci/applications/luci-app-filebrowser/root/etc
+fi
+
+if package_enabled luci-app-mosquitto mosquitto mosquitto-ssl mosquitto-client-ssl; then
+  rm -rf feeds/packages/net/mosquitto feeds/packages/lang/lua/lua-mosquitto
+  git_sparse_clone master https://github.com/laipeng668/packages net/mosquitto
+  mv package/mosquitto feeds/packages/net/mosquitto
+fi
+
+if package_enabled docker dockerd luci-app-dockerman; then
+  rm -rf feeds/packages/utils/docker feeds/packages/utils/dockerd feeds/packages/utils/docker-compose
+  git_sparse_clone master https://github.com/laipeng668/packages utils/docker
+  mv package/docker feeds/packages/utils/docker
+  git_sparse_clone master https://github.com/laipeng668/packages utils/dockerd
+  mv package/dockerd feeds/packages/utils/dockerd
+  git_sparse_clone master https://github.com/laipeng668/packages utils/docker-compose
+  mv package/docker-compose feeds/packages/utils/docker-compose
+fi
+if package_enabled luci-app-dockerman; then
+  rm -rf feeds/luci/applications/luci-app-dockerman
+  git_sparse_clone master https://github.com/laipeng668/luci applications/luci-app-dockerman
+  mv package/luci-app-dockerman feeds/luci/applications/luci-app-dockerman
+fi
+
+if package_enabled luci-app-clouddrive2 clouddrive2; then
+  rm -rf feeds/packages/net/clouddrive2 feeds/luci/applications/luci-app-clouddrive2
+  clone_repository https://github.com/xuanranran/openwrt-clouddrive2 master package/clouddrive2-src
+  mv package/clouddrive2-src/clouddrive2 feeds/packages/net/clouddrive2
+  mv package/clouddrive2-src/luci-app-clouddrive2 feeds/luci/applications/luci-app-clouddrive2
+  rm -rf package/clouddrive2-src
+fi
+
+if package_enabled luci-app-istorex luci-app-store luci-lib-taskd luci-app-quickstart; then
+  rm -rf feeds/luci/applications/luci-app-istorex feeds/luci/applications/luci-app-store \
+        feeds/luci/applications/luci-app-quickstart feeds/luci/libs/luci-lib-taskd \
+        feeds/luci/luci-nginxer feeds/luci/luci-lib-iform feeds/luci/luci-lib-linkeaseauth \
+        feeds/luci/luci-lib-linkeasefile
+  git_sparse_clone main https://github.com/linkease/nas-packages-luci luci/luci-app-istorex
+  mv package/luci-app-istorex feeds/luci/applications/luci-app-istorex
+  git_sparse_clone main https://github.com/linkease/nas-packages-luci luci/luci-app-quickstart
+  mv package/luci-app-quickstart feeds/luci/applications/luci-app-quickstart
+  git_sparse_clone main https://github.com/linkease/nas-packages-luci luci/luci-nginxer
+  mv package/luci-nginxer feeds/luci/luci-nginxer
+  git_sparse_clone main https://github.com/linkease/nas-packages-luci luci/luci-lib-iform
+  mv package/luci-lib-iform feeds/luci/libs/luci-lib-iform
+  git_sparse_clone main https://github.com/linkease/nas-packages-luci luci/luci-lib-linkeaseauth
+  mv package/luci-lib-linkeaseauth feeds/luci/libs/luci-lib-linkeaseauth
+  git_sparse_clone main https://github.com/linkease/nas-packages-luci luci/luci-lib-linkeasefile
+  mv package/luci-lib-linkeasefile feeds/luci/libs/luci-lib-linkeasefile
+fi
+if package_enabled luci-app-store; then
+  rm -rf feeds/luci/applications/luci-app-store feeds/luci/libs/luci-lib-taskd feeds/luci/luci-lib-xterm
+  clone_repository https://github.com/linkease/istore main package/istore-store
+  mv package/istore-store/luci/luci-app-store feeds/luci/applications/luci-app-store
+  mv package/istore-store/luci/luci-lib-taskd feeds/luci/libs/luci-lib-taskd
+  mv package/istore-store/luci/luci-lib-xterm feeds/luci/luci-lib-xterm
+  mv package/istore-store/luci/taskd feeds/luci/taskd
+  rm -rf package/istore-store
 fi
 
 # 清理 PassWall 的 chnlist 规则文件

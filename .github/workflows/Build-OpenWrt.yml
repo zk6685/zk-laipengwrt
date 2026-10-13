@@ -293,8 +293,17 @@ jobs:
     - name: Compile Firmware(开始编译固件)
       run: |
         cd "$OPENWRT_PATH"
+        # 编译前清理 runner 自带大目录，防止磁盘耗尽（缓存已恢复，磁盘最满）
+        sudo rm -rf /opt/hostedtoolcache /usr/share/dotnet /opt/ghc /usr/local/lib/android \
+          /usr/local/lib/node_modules /usr/local/.ghcup /usr/share/swift /tmp/* 2>/dev/null || true
         echo -e "$(nproc) thread compile"
-        make -j"$(nproc)" || make -j1 V=s
+        if ! make -j"$(nproc)"; then
+          echo "::error::Compile failed, collecting diagnostics..."
+          sudo df -hT 2>/dev/null || true
+          du -sh "$OPENWRT_PATH"/build_dir "$OPENWRT_PATH"/staging_dir "$OPENWRT_PATH"/dl 2>/dev/null || true
+          make -j1 V=s 2>&1 | tail -n 120 || true
+          exit 1
+        fi
 
     - name: Check Space Usage(检查空间使用情况)
       if: (!cancelled())
