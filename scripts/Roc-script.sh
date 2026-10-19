@@ -165,6 +165,28 @@ else
   echo "Warning: $ipq60xx_mk not found, skip kernel size adjustment" >&2
 fi
 
+# 双保险：直接 patch qualcommax 内核 config，开 BTF/eBPF/XCAL 支持（luci-app-daed 运行前提）
+# 防止 OpenWrt defconfig 重置（之前 #1 就栽在 BPF_TOOLCHAIN_HOST 被重置）
+set_kconfig() {
+  local f="$1" sym="$2" val="$3"
+  [ -f "$f" ] || return 0
+  sed -i "/^#[[:space:]]*CONFIG_${sym}[[:space:]]*is not set/d" "$f"
+  sed -i "/^CONFIG_${sym}=/d" "$f"
+  echo "CONFIG_${sym}=${val}" >> "$f"
+}
+for kcfg in target/linux/qualcommax/config-6.12 target/linux/qualcommax/config-6.6; do
+  if [ -f "$kcfg" ]; then
+    set_kconfig "$kcfg" DEBUG_INFO y
+    set_kconfig "$kcfg" DEBUG_INFO_REDUCED n
+    set_kconfig "$kcfg" DEBUG_INFO_BTF y
+    set_kconfig "$kcfg" CGROUPS y
+    set_kconfig "$kcfg" CGROUP_BPF y
+    set_kconfig "$kcfg" BPF_EVENTS y
+    set_kconfig "$kcfg" XDP_SOCKETS y
+    echo "BTF/eBPF kernel config patched in $kcfg"
+  fi
+done
+
 # 调整NSS驱动q6_region内存区域预留大小（ipq6018.dtsi默认预留85MB，ipq6018-512m.dtsi默认预留55MB，带WiFi必须至少预留54MB，以下分别是改成预留16MB、32MB、64MB和96MB）
 # sed -i 's/reg = <0x0 0x4ab00000 0x0 0x[0-9a-f]\+>/reg = <0x0 0x4ab00000 0x0 0x01000000>/' target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6018-512m.dtsi
 # sed -i 's/reg = <0x0 0x4ab00000 0x0 0x[0-9a-f]\+>/reg = <0x0 0x4ab00000 0x0 0x02000000>/' target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6018-512m.dtsi
